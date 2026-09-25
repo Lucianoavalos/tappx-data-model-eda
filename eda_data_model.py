@@ -1,20 +1,24 @@
 import marimo
 
-__generated_with = "0.25.0"
 app = marimo.App(width="full")
 
 
+# ==========================================
+# CELDA BASE: Carga de Datos y Constantes
+# ==========================================
 @app.cell
-def _():
+def __():
     import hashlib
     import json
     import marimo as mo
     import pandas as pd
 
-    # Carga de la metadata del esquema exportada de DBeaver
+    # Carga del catálogo unificado (ClickHouse, MySQL-SL, BigQuery)
     df_schema = pd.read_csv("schema_metadata.csv")
+    if "source_type" not in df_schema.columns:
+        df_schema["source_type"] = "clickhouse"
 
-    # Mapeo de subcampos para estructuras JSON complejas (OpenRTB / Tappx Core)
+    # Mapeo de subcampos para estructuras JSON complejas
     JSON_SCHEMAS_MAP = {
         "ext": {
             "descripcion": "Objeto de extensión OpenRTB / Tappx con metadatos de subasta, cookies y adaptadores de demanda.",
@@ -47,14 +51,14 @@ def _():
             ]
         },
         "json_price": {
-            "descripcion": "Variante del desglose financiero de subasta (mismas propiedades que json_prices).",
+            "descripcion": "Variante del desglose financiero de subasta.",
             "subcampos": [
                 {"subcampo": "json_price.price_request_publisher", "tipo": "Decimal", "ejemplo": "0.4500", "descripcion": "Floor price mínimo del publisher."},
                 {"subcampo": "json_price.price_response_network_net", "tipo": "Decimal", "ejemplo": "1.2000", "descripcion": "Puja neta devuelta por la red."}
             ]
         },
         "json_device": {
-            "descripcion": "Atributos técnicos del dispositivo cliente capturados durante la solicitud.",
+            "descripcion": "Atributos técnicos del dispositivo cliente.",
             "subcampos": [
                 {"subcampo": "json_device.ip", "tipo": "String", "ejemplo": "185.12.34.5", "descripcion": "IP pública del usuario."},
                 {"subcampo": "json_device.ua", "tipo": "String", "ejemplo": "Mozilla/5.0 (Android...)", "descripcion": "User-Agent completo."},
@@ -64,9 +68,7 @@ def _():
         }
     }
 
-    # Valores de muestra exhaustivos mapeados para cada campo exacto del catálogo ClickHouse
     SAMPLE_VALUES_MAP = {
-        # Campos JSON/Estructurados
         "json_data": "JSON: {'id': 'req_981', 'imp': [{'id': '1', 'banner': {'w': 320, 'h': 50}}]}",
         "json_prices": "JSON: {'price_request_publisher': 0.45, 'price_request_network': 0.60, 'price_response_network_net': 1.20, 'price_response_publisher': 0.95}",
         "json_price": "JSON: {'price_request_publisher': 0.45, 'price_request_network': 0.60, 'price_response_network_net': 1.20, 'price_response_publisher': 0.95}",
@@ -78,8 +80,6 @@ def _():
         "delivery_json_cache": "JSON: {'cached_at': '2026-09-25 12:00:00', 'status': 'valid'}",
         "ext": "JSON: {'bidder': {'tappx': {'seat': '101'}}, 'gpid': '/1234/banner', 'schain': {'ver':'1.0'}}",
         "extra": "JSON: {'internal_tag': 'test_group_a'}",
-    
-        # Dimensiones del Dominio (Keys / Combos)
         "publisher": "'pub_9812', 'tappx_direct_102', 'app_publisher_55'",
         "ad_unit": "'interstitial_bottom', 'banner_top_300x250', 'rewarded_video_1'",
         "adunit": "'interstitial_bottom', 'banner_top_300x250', 'rewarded_video_1'",
@@ -90,41 +90,84 @@ def _():
         "device_os": "'android', 'ios', 'windows', 'tizen', 'webos'"
     }
 
-    mo.md("# 📊 Explorador del Modelo de Datos - Tappx")
-    return JSON_SCHEMAS_MAP, SAMPLE_VALUES_MAP, df_schema, hashlib, json, mo
+    mo.md("# 📊 Explorador Multi-Fuente del Modelo de Datos - Tappx")
+    return (
+        JSON_SCHEMAS_MAP,
+        SAMPLE_VALUES_MAP,
+        df_schema,
+        hashlib,
+        json,
+        mo,
+        pd,
+    )
 
 
+# ==========================================================
+# BLOQUE 1: Filtro de Fuente
+# ==========================================================
 @app.cell
-def _(df_schema, mo):
-    todos_los_campos = sorted(df_schema["column_name"].dropna().unique().tolist())
+def __(df_schema, mo):
+    motores_disponibles = sorted(df_schema["source_type"].dropna().unique().tolist())
 
-    # Multiselección de campos
-    filtro_campo = mo.ui.multiselect(
-        options=todos_los_campos,
-        value=["json_prices", "json_data"] if "json_prices" in todos_los_campos and "json_data" in todos_los_campos else [todos_los_campos[0]],
-        label="🔎 Selecciona los campos a inspeccionar:"
+    filtro_fuente_b1 = mo.ui.multiselect(
+        options=motores_disponibles,
+        value=motores_disponibles,
+        label="🗄️ Paso 1: Selecciona las Fuentes de Datos (ClickHouse / MySQL-SL / BigQuery):"
     )
 
     mo.vstack([
-        mo.md("## 1️⃣ Bloque de Inspección de Campos"),
-        filtro_campo
+        mo.md("## 1️⃣ Bloque de Inspección de Campos Multi-Fuente"),
+        filtro_fuente_b1
     ])
-    return (filtro_campo,)
+    return filtro_fuente_b1, motores_disponibles
 
 
+# ==========================================================
+# BLOQUE 1: Filtro Excluyente de Campos en Cascada
+# ==========================================================
 @app.cell
-def _(JSON_SCHEMAS_MAP, SAMPLE_VALUES_MAP, df_schema, filtro_campo, mo):
+def __(df_schema, filtro_fuente_b1, mo):
+    fuentes_activas = filtro_fuente_b1.value
+    campos_excluyentes = sorted(
+        df_schema[df_schema["source_type"].isin(fuentes_activas)]["column_name"]
+        .dropna().unique().tolist()
+    )
+
+    filtro_campo = mo.ui.multiselect(
+        options=campos_excluyentes,
+        value=["json_prices", "publisher"] if "json_prices" in campos_excluyentes and "publisher" in campos_excluyentes else [campos_excluyentes[0]] if campos_excluyentes else [],
+        label="🔎 Paso 2: Campos disponibles en las fuentes seleccionadas:"
+    )
+
+    filtro_campo
+    return campos_excluyentes, filtro_campo, fuentes_activas
+
+
+# ==========================================================
+# BLOQUE 1: Renderizado de Resultados
+# ==========================================================
+@app.cell
+def __(
+    JSON_SCHEMAS_MAP,
+    SAMPLE_VALUES_MAP,
+    df_schema,
+    filtro_campo,
+    filtro_fuente_b1,
+    mo,
+):
     campos_seleccionados = filtro_campo.value
+    fuentes_seleccionadas = filtro_fuente_b1.value
 
-    if not campos_seleccionados:
-        bloque_1_output = mo.md("⚠️ Selecciona al menos un campo arriba para inspeccionar.")
+    if not campos_seleccionados or not fuentes_seleccionadas:
+        bloque_1_output = mo.md("⚠️ Selecciona al menos una fuente de datos y un campo para inspeccionar.")
     else:
-        # 1. Filtrar la presencia de los campos en las tablas
-        df_presencia = df_schema[df_schema["column_name"].isin(campos_seleccionados)][
-            ["column_name", "database_name", "table_name", "data_type", "column_key"]
-        ].drop_duplicates().sort_values(by=["column_name", "database_name", "table_name"])
+        df_presencia = df_schema[
+            (df_schema["source_type"].isin(fuentes_seleccionadas))
+            & (df_schema["column_name"].isin(campos_seleccionados))
+        ][
+            ["source_type", "column_name", "database_name", "table_name", "data_type", "column_key"]
+        ].drop_duplicates().sort_values(by=["source_type", "column_name", "database_name", "table_name"])
 
-        # 2. Asignar los valores de muestra exactos
         df_presencia["Valores de Muestra"] = df_presencia["column_name"].apply(
             lambda col: SAMPLE_VALUES_MAP.get(
                 str(col).lower(), 
@@ -132,9 +175,8 @@ def _(JSON_SCHEMAS_MAP, SAMPLE_VALUES_MAP, df_schema, filtro_campo, mo):
             )
         )
 
-        df_presencia.columns = ["Campo", "Capa (Database)", "Tabla", "Tipo de Dato", "Key", "Valores de Muestra"]
+        df_presencia.columns = ["Fuente (Engine)", "Campo", "Base de Datos / Dataset", "Tabla", "Tipo de Dato", "Key", "Valores de Muestra"]
 
-        # 3. Construir la vista expandida para los objetos JSON presentes
         json_html_list = []
         for c_sel in campos_seleccionados:
             json_info = JSON_SCHEMAS_MAP.get(str(c_sel).lower(), None)
@@ -169,66 +211,100 @@ def _(JSON_SCHEMAS_MAP, SAMPLE_VALUES_MAP, df_schema, filtro_campo, mo):
                 json_html_list.append(mo.Html(json_card))
 
         bloque_1_output = mo.vstack([
-            mo.md(f"### 🎯 Presencia y Muestras para: `{', '.join(campos_seleccionados)}` ({len(df_presencia)} coincidencias)"),
+            mo.md(f"### 🎯 Coincidencias ({len(df_presencia)} registros en {', '.join(fuentes_seleccionadas)}):"),
             mo.ui.table(df_presencia),
             *json_html_list,
             mo.md("---")
         ])
 
     bloque_1_output
-    return
-
-
-@app.cell
-def _(df_schema, mo):
-    mo.md("## 2️⃣ Bloque de Diagrama de Capas y Relaciones")
-
-    capas_unicas = sorted(df_schema["database_name"].dropna().unique().tolist())
-
-    filtro_capas_diagrama = mo.ui.multiselect(
-        options=capas_unicas,
-        value=capas_unicas,
-        label="🔍 Selecciona Capas (raw, normalized, consolidated):"
+    return (
+        bloque_1_output,
+        c_sel,
+        campos_seleccionados,
+        df_presencia,
+        filas,
+        fuentes_seleccionadas,
+        json_card,
+        json_html_list,
+        json_info,
     )
 
-    filtro_capas_diagrama
-    return (filtro_capas_diagrama,)
+
+# ==========================================================
+# BLOQUE 2: Controles Excluyentes para Canvas
+# ==========================================================
+@app.cell
+def __(df_schema, mo):
+    mo.md("## 2️⃣ Bloque de Diagrama de Arquitectura Inter-Fuente")
+    
+    fuentes_canvas_disponibles = sorted(df_schema["source_type"].dropna().unique().tolist())
+    
+    filtro_fuente_b2 = mo.ui.multiselect(
+        options=fuentes_canvas_disponibles,
+        value=fuentes_canvas_disponibles,
+        label="⚙️ Paso 1: Selecciona las Fuentes para el Canvas:"
+    )
+
+    filtro_fuente_b2
+    return filtro_fuente_b2, fuentes_canvas_disponibles
 
 
 @app.cell
-def _(df_schema, filtro_capas_diagrama, mo):
-    df_capas_diagrama = df_schema[
-        df_schema["database_name"].isin(filtro_capas_diagrama.value)
+def __(df_schema, filtro_fuente_b2, mo):
+    df_fuentes_diagrama = df_schema[
+        df_schema["source_type"].isin(filtro_fuente_b2.value)
     ].copy()
-
-    tablas_unicas_diagrama = sorted(df_capas_diagrama["table_name"].unique().tolist())
+    
+    tablas_excluyentes_diagrama = sorted(
+        (df_fuentes_diagrama["source_type"] + " :: " + df_fuentes_diagrama["database_name"] + "." + df_fuentes_diagrama["table_name"])
+        .unique().tolist()
+    )
 
     filtro_tablas_diagrama = mo.ui.multiselect(
-        options=tablas_unicas_diagrama,
-        value=tablas_unicas_diagrama[:6] if len(tablas_unicas_diagrama) >= 6 else tablas_unicas_diagrama,
-        label="📌 Selecciona Tablas para graficar en el Canvas:"
+        options=tablas_excluyentes_diagrama,
+        value=tablas_excluyentes_diagrama[:6] if len(tablas_excluyentes_diagrama) >= 6 else tablas_excluyentes_diagrama,
+        label="📌 Paso 2: Tablas / Datasets disponibles en las fuentes seleccionadas:"
     )
 
     filtro_tablas_diagrama
-    return (filtro_tablas_diagrama,)
+    return df_fuentes_diagrama, filtro_tablas_diagrama, tablas_excluyentes_diagrama
 
 
+# ==========================================================
+# BLOQUE 2: Canvas SVG Interactivo
+# ==========================================================
 @app.cell
-def _(
+def __(
     df_schema,
-    filtro_capas_diagrama,
+    filtro_fuente_b2,
     filtro_tablas_diagrama,
     hashlib,
     json,
     mo,
+    pd,
 ):
-    if not filtro_tablas_diagrama.value:
-        bloque_2_output = mo.md("⚠️ Selecciona al menos una tabla para renderizar el diagrama.")
+    if not filtro_tablas_diagrama.value or not filtro_fuente_b2.value:
+        bloque_2_output = mo.md("⚠️ Selecciona al menos una fuente y una tabla para renderizar el diagrama.")
     else:
-        df_canvas = df_schema[
-            (df_schema["database_name"].isin(filtro_capas_diagrama.value))
-            & (df_schema["table_name"].isin(filtro_tablas_diagrama.value))
-        ].copy()
+        tablas_seleccionadas_str = filtro_tablas_diagrama.value
+        
+        df_canvas_list = []
+        for item in tablas_seleccionadas_str:
+            parts = item.split(" :: ")
+            s_type = parts[0]
+            db_tb = parts[1].split(".")
+            db_n = db_tb[0]
+            tb_n = db_tb[1]
+            
+            sub = df_schema[
+                (df_schema["source_type"] == s_type) &
+                (df_schema["database_name"] == db_n) &
+                (df_schema["table_name"] == tb_n)
+            ]
+            df_canvas_list.append(sub)
+
+        df_canvas = pd.concat(df_canvas_list, ignore_index=True) if df_canvas_list else pd.DataFrame()
 
         conteo_cols = df_canvas["column_name"].value_counts()
         cols_compartidas = conteo_cols[conteo_cols > 1].index.tolist()
@@ -252,11 +328,11 @@ def _(
 
         tables_payload = []
         grid_cols = 3
-        spacing_x = 340
+        spacing_x = 360
         spacing_y = 380
 
-        for idx, ((capa, tabla), grp) in enumerate(df_canvas.groupby(["database_name", "table_name"])):
-            t_id = f"{capa}__{tabla}"
+        for idx, ((stype, capa, tabla), grp) in enumerate(df_canvas.groupby(["source_type", "database_name", "table_name"])):
+            t_id = f"{stype}__{capa}__{tabla}"
             pos_x = 40 + (idx % grid_cols) * spacing_x
             pos_y = 40 + (idx // grid_cols) * spacing_y
 
@@ -284,6 +360,8 @@ def _(
 
             tables_payload.append({
                 "id": t_id,
+                "engine": str(stype).lower().replace(".", "_"),
+                "engine_label": str(stype),
                 "layer": capa.lower(),
                 "name": tabla,
                 "x": pos_x,
@@ -312,7 +390,7 @@ def _(
                     reverse=True,
                 )
 
-                for campo in comunes_ordenados[:5]:
+                for campo in comunes_ordenados:
                     pair_key = tuple(sorted([f"{t1['id']}:{campo}", f"{t2['id']}:{campo}"]))
                     if pair_key not in drawn_pairs:
                         drawn_pairs.add(pair_key)
@@ -355,9 +433,9 @@ def _(
                 }}
                 .table-card {{
                     position: absolute;
-                    width: 300px;
-                    min-width: 200px;
-                    min-height: 120px;
+                    width: 320px;
+                    min-width: 220px;
+                    min-height: 130px;
                     background: #FFFFFF;
                     border-radius: 8px;
                     box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
@@ -374,7 +452,7 @@ def _(
                     padding: 10px 12px;
                     color: #FFFFFF;
                     font-weight: 700;
-                    font-size: 13px;
+                    font-size: 12px;
                     border-top-left-radius: 7px;
                     border-top-right-radius: 7px;
                     display: flex;
@@ -382,16 +460,17 @@ def _(
                     align-items: center;
                     flex-shrink: 0;
                 }}
-                .layer-raw {{ background: #C2410C; }}
-                .layer-normalized {{ background: #047857; }}
-                .layer-consolidated {{ background: #1D4ED8; }}
-            
-                .layer-tag {{
+                .engine-clickhouse {{ background: #C2410C; }}
+                .engine-mysql-sl {{ background: #0284C7; }}
+                .engine-bigquery {{ background: #4F46E5; }}
+                
+                .engine-tag {{
                     font-size: 9px;
                     padding: 2px 6px;
                     border-radius: 4px;
                     background: rgba(255,255,255,0.25);
                     letter-spacing: 0.5px;
+                    text-transform: uppercase;
                 }}
                 .col-list {{
                     flex-grow: 1;
@@ -472,9 +551,9 @@ def _(
                     }});
 
                     card.innerHTML = `
-                        <div class="card-header layer-${{t.layer}}">
-                            <span>${{t.name}}</span>
-                            <span class="layer-tag">${{t.layer.toUpperCase()}}</span>
+                        <div class="card-header engine-${{t.engine}}">
+                            <span>${{t.layer}} . ${{t.name}}</span>
+                            <span class="engine-tag">${{t.engine_label}}</span>
                         </div>
                         <div class="col-list">${{colsHtml}}</div>
                     `;
@@ -484,45 +563,43 @@ def _(
                 }});
 
                 function drawLines() {{
-                 svg.innerHTML = '';
-                        const boardRect = board.getBoundingClientRect();
+                    svg.innerHTML = '';
+                    const boardRect = board.getBoundingClientRect();
 
-                        connections.forEach(conn => {{
-                            const el1 = document.getElementById(`${{conn.from_table}}__${{conn.field}}`);
-                            const el2 = document.getElementById(`${{conn.to_table}}__${{conn.field}}`);
+                    connections.forEach(conn => {{
+                        const el1 = document.getElementById(`${{conn.from_table}}__${{conn.field}}`);
+                        const el2 = document.getElementById(`${{conn.to_table}}__${{conn.field}}`);
 
-                            if (el1 && el2) {{
-                                const card1 = el1.closest('.table-card');
-                                const card2 = el2.closest('.table-card');
+                        if (el1 && el2) {{
+                            const card1 = el1.closest('.table-card');
+                            card2 = el2.closest('.table-card');
 
-                                const r1 = el1.getBoundingClientRect();
-                                const r2 = el2.getBoundingClientRect();
-                                const c1Rect = card1.getBoundingClientRect();
-                                const c2Rect = card2.getBoundingClientRect();
+                            const r1 = el1.getBoundingClientRect();
+                            const r2 = el2.getBoundingClientRect();
+                            const c1Rect = card1.getBoundingClientRect();
+                            const c2Rect = card2.getBoundingClientRect();
 
-                                // Verificar que el campo sea visible dentro del área de scroll de la tarjeta
-                                const isVisible1 = (r1.top >= c1Rect.top) && (r1.bottom <= c1Rect.bottom);
-                                const isVisible2 = (r2.top >= c2Rect.top) && (r2.bottom <= c2Rect.bottom);
+                            const isVisible1 = (r1.top >= c1Rect.top) && (r1.bottom <= c1Rect.bottom);
+                            const isVisible2 = (r2.top >= c2Rect.top) && (r2.bottom <= c2Rect.bottom);
 
-                                if (isVisible1 && isVisible2) {{
-                                    const isCard1Left = c1Rect.left < c2Rect.left;
+                            if (isVisible1 && isVisible2) {{
+                                const isCard1Left = c1Rect.left < c2Rect.left;
 
-                                    // Enganchar la línea a los bordes laterales exteriores de las tarjetas
-                                    const x1 = isCard1Left ? (c1Rect.right - boardRect.left) : (c1Rect.left - boardRect.left);
-                                    const y1 = (r1.top + r1.bottom) / 2 - boardRect.top;
+                                const x1 = isCard1Left ? (c1Rect.right - boardRect.left) : (c1Rect.left - boardRect.left);
+                                const y1 = (r1.top + r1.bottom) / 2 - boardRect.top;
 
-                                    const x2 = isCard1Left ? (c2Rect.left - boardRect.left) : (c2Rect.right - boardRect.left);
-                                    const y2 = (r2.top + r2.bottom) / 2 - boardRect.top;
+                                const x2 = isCard1Left ? (c2Rect.left - boardRect.left) : (c2Rect.right - boardRect.left);
+                                const y2 = (r2.top + r2.bottom) / 2 - boardRect.top;
 
-                                    const dx = Math.min(Math.abs(x2 - x1) * 0.5, 150);
-                                    const d = `M ${{x1}} ${{y1}} C ${{x1 + (isCard1Left ? dx : -dx)}} ${{y1}}, ${{x2 + (isCard1Left ? -dx : dx)}} ${{y2}}, ${{x2}} ${{y2}}`;
+                                const dx = Math.min(Math.abs(x2 - x1) * 0.5, 150);
+                                const d = `M ${{x1}} ${{y1}} C ${{x1 + (isCard1Left ? dx : -dx)}} ${{y1}}, ${{x2 + (isCard1Left ? -dx : dx)}} ${{y2}}, ${{x2}} ${{y2}}`;
 
-                                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                                    path.setAttribute('d', d);
-                                    path.setAttribute('class', 'rel-line');
-                                    path.setAttribute('stroke', conn.color);
-                                    svg.appendChild(path);
-                                }}
+                                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                                path.setAttribute('d', d);
+                                path.setAttribute('class', 'rel-line');
+                                path.setAttribute('stroke', conn.color);
+                                svg.appendChild(path);
+                            }}
                         }}
                     }});
                 }}
@@ -539,16 +616,16 @@ def _(
                     el.addEventListener('mousedown', e => {{
                         const rect = el.getBoundingClientRect();
                         const isResizeHandle = (e.clientX > rect.right - 16) && (e.clientY > rect.bottom - 16);
-                    
+                        
                         if (e.target.closest('.col-list') || isResizeHandle) return;
-                    
+                        
                         isDragging = true;
                         startX = e.clientX;
                         startY = e.clientY;
                         initX = el.offsetLeft;
                         initY = el.offsetTop;
                         document.addEventListener('mousemove', onMouseMove);
-                        document.addEventListener('mouseup', onMouseUp);
+                        document.removeEventListener('mouseup', onMouseUp);
                     }});
 
                     function onMouseMove(e) {{
@@ -573,11 +650,115 @@ def _(
         """
 
         bloque_2_output = mo.vstack([
-            mo.iframe(html=html_canvas, width="100%", height="750px")
+            mo.iframe(html=html_canvas, width="100%", height="750px"),
+            mo.md("---")
         ])
 
     bloque_2_output
-    return
+    return (
+        bloque_2_output,
+        cols_compartidas,
+        cols_data,
+        comunes,
+        comunes_ordenados,
+        connections,
+        conteo_cols,
+        db_tb,
+        db_n,
+        df_canvas,
+        df_canvas_list,
+        drawn_pairs,
+        grid_cols,
+        html_canvas,
+        idx,
+        item,
+        obtener_color,
+        parts,
+        s_type,
+        spacing_x,
+        spacing_y,
+        sub,
+        t_id,
+        tables_payload,
+        tablas_seleccionadas_str,
+        tb_n,
+    )
+
+
+# ==========================================================
+# SECCIÓN 3: Matriz de Trazabilidad sin Nombres Duplicados
+# ==========================================================
+@app.cell
+def __(df_schema, mo):
+    mo.md("## 3️⃣ Sección de Trazabilidad Transversal de Tablas y Fuentes")
+
+    df_agrupado_rel = df_schema.groupby("column_name")["source_type"].nunique()
+    claves_inter_fuente = sorted(df_agrupado_rel[df_agrupado_rel > 1].index.tolist())
+
+    filtro_relacion = mo.ui.multiselect(
+        options=claves_inter_fuente,
+        value=claves_inter_fuente[:5] if len(claves_inter_fuente) >= 5 else claves_inter_fuente,
+        label="🔗 Selecciona los campos clave de unión entre Fuentes de Datos:"
+    )
+
+    filtro_relacion
+    return claves_inter_fuente, df_agrupado_rel, filtro_relacion
+
+
+@app.cell
+def __(df_schema, filtro_relacion, mo, pd):
+    campos_rel = filtro_relacion.value
+
+    if not campos_rel:
+        bloque_3_output = mo.md("⚠️ Selecciona al menos un campo clave arriba para analizar la matriz de trazabilidad.")
+    else:
+        df_sub_rel = df_schema[df_schema["column_name"].isin(campos_rel)].copy()
+
+        relaciones_lista = []
+        for col_nombre, grp_rel in df_sub_rel.groupby("column_name"):
+            tablas_lista = grp_rel[["source_type", "database_name", "table_name", "data_type"]].drop_duplicates().to_dict("records")
+            
+            for idx_a in range(len(tablas_lista)):
+                tab_a = tablas_lista[idx_a]
+                for idx_b in range(idx_a + 1, len(tablas_lista)):
+                    tab_b = tablas_lista[idx_b]
+                    
+                    es_inter = "🔀 Inter-Fuente" if tab_a["source_type"] != tab_b["source_type"] else "🏠 Intra-Fuente"
+                    
+                    relaciones_lista.append({
+                        "Campo Clave": col_nombre,
+                        "Tipo Cruzado": es_inter,
+                        "Fuente A": tab_a["source_type"],
+                        "Tabla Origen": f"{tab_a['database_name']}.{tab_a['table_name']}",
+                        "Tipo A": tab_a["data_type"],
+                        "Fuente B": tab_b["source_type"],
+                        "Tabla Destino": f"{tab_b['database_name']}.{tab_b['table_name']}",
+                        "Tipo B": tab_b["data_type"]
+                    })
+
+        df_relaciones = pd.DataFrame(relaciones_lista)
+
+        bloque_3_output = mo.vstack([
+            mo.md(f"### 🌐 Matriz de Mapeo de Relaciones ({len(df_relaciones)} conexiones detectadas)"),
+            mo.ui.table(df_relaciones)
+        ])
+
+    bloque_3_output
+    return (
+        bloque_3_output,
+        campos_rel,
+        col_nombre,
+        df_relaciones,
+        df_sub_rel,
+        es_inter,
+        grp_rel,
+        idx_a,
+        idx_b,
+        relaciones_lista,
+        tab_a,
+        tab_b,
+        tablas_lista,
+    )
 
 
 if __name__ == "__main__":
