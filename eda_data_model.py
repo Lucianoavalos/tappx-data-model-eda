@@ -1,13 +1,11 @@
 import marimo
 
+__generated_with = "0.25.0"
 app = marimo.App(width="full")
 
 
-# ==========================================
-# CELDA BASE: Carga de Datos y Constantes
-# ==========================================
 @app.cell
-def __():
+def _():
     import hashlib
     import json
     import marimo as mo
@@ -102,11 +100,8 @@ def __():
     )
 
 
-# ==========================================================
-# BLOQUE 1: Filtro de Fuente
-# ==========================================================
 @app.cell
-def __(df_schema, mo):
+def _(df_schema, mo):
     motores_disponibles = sorted(df_schema["source_type"].dropna().unique().tolist())
 
     filtro_fuente_b1 = mo.ui.multiselect(
@@ -119,14 +114,11 @@ def __(df_schema, mo):
         mo.md("## 1️⃣ Bloque de Inspección de Campos Multi-Fuente"),
         filtro_fuente_b1
     ])
-    return filtro_fuente_b1, motores_disponibles
+    return (filtro_fuente_b1,)
 
 
-# ==========================================================
-# BLOQUE 1: Filtro Excluyente de Campos en Cascada
-# ==========================================================
 @app.cell
-def __(df_schema, filtro_fuente_b1, mo):
+def _(df_schema, filtro_fuente_b1, mo):
     fuentes_activas = filtro_fuente_b1.value
     campos_excluyentes = sorted(
         df_schema[df_schema["source_type"].isin(fuentes_activas)]["column_name"]
@@ -140,14 +132,11 @@ def __(df_schema, filtro_fuente_b1, mo):
     )
 
     filtro_campo
-    return campos_excluyentes, filtro_campo, fuentes_activas
+    return (filtro_campo,)
 
 
-# ==========================================================
-# BLOQUE 1: Renderizado de Resultados
-# ==========================================================
 @app.cell
-def __(
+def _(
     JSON_SCHEMAS_MAP,
     SAMPLE_VALUES_MAP,
     df_schema,
@@ -218,28 +207,15 @@ def __(
         ])
 
     bloque_1_output
-    return (
-        bloque_1_output,
-        c_sel,
-        campos_seleccionados,
-        df_presencia,
-        filas,
-        fuentes_seleccionadas,
-        json_card,
-        json_html_list,
-        json_info,
-    )
+    return
 
 
-# ==========================================================
-# BLOQUE 2: Controles Excluyentes para Canvas
-# ==========================================================
 @app.cell
-def __(df_schema, mo):
+def _(df_schema, mo):
     mo.md("## 2️⃣ Bloque de Diagrama de Arquitectura Inter-Fuente")
-    
+
     fuentes_canvas_disponibles = sorted(df_schema["source_type"].dropna().unique().tolist())
-    
+
     filtro_fuente_b2 = mo.ui.multiselect(
         options=fuentes_canvas_disponibles,
         value=fuentes_canvas_disponibles,
@@ -247,15 +223,15 @@ def __(df_schema, mo):
     )
 
     filtro_fuente_b2
-    return filtro_fuente_b2, fuentes_canvas_disponibles
+    return (filtro_fuente_b2,)
 
 
 @app.cell
-def __(df_schema, filtro_fuente_b2, mo):
+def _(df_schema, filtro_fuente_b2, mo):
     df_fuentes_diagrama = df_schema[
         df_schema["source_type"].isin(filtro_fuente_b2.value)
     ].copy()
-    
+
     tablas_excluyentes_diagrama = sorted(
         (df_fuentes_diagrama["source_type"] + " :: " + df_fuentes_diagrama["database_name"] + "." + df_fuentes_diagrama["table_name"])
         .unique().tolist()
@@ -268,14 +244,11 @@ def __(df_schema, filtro_fuente_b2, mo):
     )
 
     filtro_tablas_diagrama
-    return df_fuentes_diagrama, filtro_tablas_diagrama, tablas_excluyentes_diagrama
+    return (filtro_tablas_diagrama,)
 
 
-# ==========================================================
-# BLOQUE 2: Canvas SVG Interactivo
-# ==========================================================
 @app.cell
-def __(
+def _(
     df_schema,
     filtro_fuente_b2,
     filtro_tablas_diagrama,
@@ -288,7 +261,7 @@ def __(
         bloque_2_output = mo.md("⚠️ Selecciona al menos una fuente y una tabla para renderizar el diagrama.")
     else:
         tablas_seleccionadas_str = filtro_tablas_diagrama.value
-        
+    
         df_canvas_list = []
         for item in tablas_seleccionadas_str:
             parts = item.split(" :: ")
@@ -296,7 +269,7 @@ def __(
             db_tb = parts[1].split(".")
             db_n = db_tb[0]
             tb_n = db_tb[1]
-            
+        
             sub = df_schema[
                 (df_schema["source_type"] == s_type) &
                 (df_schema["database_name"] == db_n) &
@@ -463,7 +436,7 @@ def __(
                 .engine-clickhouse {{ background: #C2410C; }}
                 .engine-mysql-sl {{ background: #0284C7; }}
                 .engine-bigquery {{ background: #4F46E5; }}
-                
+            
                 .engine-tag {{
                     font-size: 9px;
                     padding: 2px 6px;
@@ -572,7 +545,7 @@ def __(
 
                         if (el1 && el2) {{
                             const card1 = el1.closest('.table-card');
-                            card2 = el2.closest('.table-card');
+                            const card2 = el2.closest('.table-card');
 
                             const r1 = el1.getBoundingClientRect();
                             const r2 = el2.getBoundingClientRect();
@@ -614,31 +587,40 @@ def __(
                     resizeObserver.observe(el);
 
                     el.addEventListener('mousedown', e => {{
+                        if (e.button !== 0) return;
+
                         const rect = el.getBoundingClientRect();
-                        const isResizeHandle = (e.clientX > rect.right - 16) && (e.clientY > rect.bottom - 16);
-                        
+                        const isResizeHandle = (e.clientX > rect.right - 18) && (e.clientY > rect.bottom - 18);
                         if (e.target.closest('.col-list') || isResizeHandle) return;
-                        
+
                         isDragging = true;
                         startX = e.clientX;
                         startY = e.clientY;
                         initX = el.offsetLeft;
                         initY = el.offsetTop;
-                        document.addEventListener('mousemove', onMouseMove);
-                        document.removeEventListener('mouseup', onMouseUp);
+
+                        window.addEventListener('mousemove', onMouseMove);
+                        window.addEventListener('mouseup', onMouseUp);
+                    
+                        e.preventDefault();
                     }});
 
                     function onMouseMove(e) {{
                         if (!isDragging) return;
+
                         el.style.left = (initX + e.clientX - startX) + 'px';
                         el.style.top = (initY + e.clientY - startY) + 'px';
-                        drawLines();
+
+                        requestAnimationFrame(drawLines);
                     }}
 
                     function onMouseUp() {{
-                        isDragging = false;
-                        document.removeEventListener('mousemove', onMouseMove);
-                        document.removeEventListener('mouseup', onMouseUp);
+                        if (isDragging) {{
+                            isDragging = false;
+                            window.removeEventListener('mousemove', onMouseMove);
+                            window.removeEventListener('mouseup', onMouseUp);
+                            drawLines();
+                        }}
                     }}
                 }}
 
@@ -655,41 +637,11 @@ def __(
         ])
 
     bloque_2_output
-    return (
-        bloque_2_output,
-        cols_compartidas,
-        cols_data,
-        comunes,
-        comunes_ordenados,
-        connections,
-        conteo_cols,
-        db_tb,
-        db_n,
-        df_canvas,
-        df_canvas_list,
-        drawn_pairs,
-        grid_cols,
-        html_canvas,
-        idx,
-        item,
-        obtener_color,
-        parts,
-        s_type,
-        spacing_x,
-        spacing_y,
-        sub,
-        t_id,
-        tables_payload,
-        tablas_seleccionadas_str,
-        tb_n,
-    )
+    return
 
 
-# ==========================================================
-# SECCIÓN 3: Matriz de Trazabilidad sin Nombres Duplicados
-# ==========================================================
 @app.cell
-def __(df_schema, mo):
+def _(df_schema, mo):
     mo.md("## 3️⃣ Sección de Trazabilidad Transversal de Tablas y Fuentes")
 
     df_agrupado_rel = df_schema.groupby("column_name")["source_type"].nunique()
@@ -702,11 +654,11 @@ def __(df_schema, mo):
     )
 
     filtro_relacion
-    return claves_inter_fuente, df_agrupado_rel, filtro_relacion
+    return (filtro_relacion,)
 
 
 @app.cell
-def __(df_schema, filtro_relacion, mo, pd):
+def _(df_schema, filtro_relacion, mo, pd):
     campos_rel = filtro_relacion.value
 
     if not campos_rel:
@@ -717,14 +669,14 @@ def __(df_schema, filtro_relacion, mo, pd):
         relaciones_lista = []
         for col_nombre, grp_rel in df_sub_rel.groupby("column_name"):
             tablas_lista = grp_rel[["source_type", "database_name", "table_name", "data_type"]].drop_duplicates().to_dict("records")
-            
+        
             for idx_a in range(len(tablas_lista)):
                 tab_a = tablas_lista[idx_a]
                 for idx_b in range(idx_a + 1, len(tablas_lista)):
                     tab_b = tablas_lista[idx_b]
-                    
+                
                     es_inter = "🔀 Inter-Fuente" if tab_a["source_type"] != tab_b["source_type"] else "🏠 Intra-Fuente"
-                    
+                
                     relaciones_lista.append({
                         "Campo Clave": col_nombre,
                         "Tipo Cruzado": es_inter,
@@ -744,21 +696,7 @@ def __(df_schema, filtro_relacion, mo, pd):
         ])
 
     bloque_3_output
-    return (
-        bloque_3_output,
-        campos_rel,
-        col_nombre,
-        df_relaciones,
-        df_sub_rel,
-        es_inter,
-        grp_rel,
-        idx_a,
-        idx_b,
-        relaciones_lista,
-        tab_a,
-        tab_b,
-        tablas_lista,
-    )
+    return
 
 
 if __name__ == "__main__":
