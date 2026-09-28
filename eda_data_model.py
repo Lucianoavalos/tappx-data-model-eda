@@ -11,8 +11,23 @@ def _():
     import marimo as mo
     import pandas as pd
 
-    # Carga del catálogo unificado (ClickHouse, MySQL-SL, BigQuery)
-    df_schema = pd.read_csv("schema_metadata.csv")
+    # Carga robusta de datos
+    SOURCES = [
+        "schema_metadata.csv",
+        "https://raw.githubusercontent.com/Lucianoavalos/tappx-data-model-eda/master/schema_metadata.csv"
+    ]
+
+    df_schema = None
+    for src in SOURCES:
+        try:
+            df_schema = pd.read_csv(src)
+            break
+        except Exception:
+            continue
+
+    if df_schema is None:
+        raise FileNotFoundError("No se pudo cargar 'schema_metadata.csv' desde ninguna fuente.")
+
     if "source_type" not in df_schema.columns:
         df_schema["source_type"] = "clickhouse"
 
@@ -127,7 +142,7 @@ def _(df_schema, filtro_fuente_b1, mo):
 
     filtro_campo = mo.ui.multiselect(
         options=campos_excluyentes,
-        value=["json_prices", "publisher"] if "json_prices" in campos_excluyentes and "publisher" in campos_excluyentes else [campos_excluyentes[0]] if campos_excluyentes else [],
+        value=campos_excluyentes[:3] if len(campos_excluyentes) >= 3 else campos_excluyentes,
         label="🔎 Paso 2: Campos disponibles en las fuentes seleccionadas:"
     )
 
@@ -207,7 +222,7 @@ def _(
         ])
 
     bloque_1_output
-    return
+    return (bloque_1_output,)
 
 
 @app.cell
@@ -382,25 +397,28 @@ def _(
             <meta charset="utf-8">
             <style>
                 * {{ box-sizing: border-box; margin: 0; padding: 0; user-select: none; }}
-                body {{
+                html, body {{
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     background-color: #F8FAFC;
-                    overflow: auto;
-                    height: 100vh;
-                    position: relative;
+                    width: 100%;
+                    height: 520px;
+                    margin: 0;
+                    padding: 0;
+                    overflow: hidden;
                 }}
                 #board {{
                     position: relative;
-                    min-width: 1600px;
-                    min-height: 1000px;
+                    width: 100%;
+                    height: 520px;
                     padding: 20px;
+                    overflow: auto;
                 }}
                 svg#connections {{
                     position: absolute;
                     top: 0;
                     left: 0;
-                    width: 100%;
-                    height: 100%;
+                    width: 1600px;
+                    height: 1000px;
                     pointer-events: none;
                     z-index: 1;
                 }}
@@ -632,12 +650,12 @@ def _(
         """
 
         bloque_2_output = mo.vstack([
-            mo.iframe(html=html_canvas, width="100%", height="750px"),
+            mo.iframe(html=html_canvas, width="100%", height="540px"),
             mo.md("---")
         ])
 
     bloque_2_output
-    return
+    return (bloque_2_output,)
 
 
 @app.cell
@@ -696,7 +714,7 @@ def _(df_schema, filtro_relacion, mo, pd):
         ])
 
     bloque_3_output
-    return
+    return (bloque_3_output,)
 
 
 if __name__ == "__main__":
