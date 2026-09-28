@@ -33,7 +33,8 @@ jobs:
       - name: Install dependencies and Export Marimo WASM
         run: |
           uv pip install marimo pandas pyarrow --system
-          marimo export html-wasm eda_data_model.py -o dist/index.html --no-show-code --include-files *.csv
+          mkdir -p dist
+          marimo export html-wasm eda_data_model.py -o dist/index.html --no-show-code
           cp *.csv dist/ 2>/dev/null || true
 
       - name: Upload artifact
